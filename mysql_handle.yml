@@ -1,0 +1,59 @@
+---
+- hosts: 192.168.0.30
+  user: root
+  become_method: sudo
+  become: yes
+  gather_facts: yes
+
+  vars:
+    - db_name: 'birdwatchers'
+    - restore_db: 'birdwatchers.sql'
+    - client: '192.168.0.22'
+  
+  tasks:
+
+    - name: Install mariadb and mariadb-client
+      yum: name={{ item }} state=latest
+      with_items:
+        - "@mariadb"
+        - "@mariadb-client"
+      notify:
+        - Restart mariadb
+
+
+    - name: Adding mysql service to firewall
+      firewalld: service=mysql permanent=yes state=enabled
+      notify:
+        - Restart firewalld
+
+
+    - name: Force handlers to run here now
+      meta: flush_handlers
+
+
+    - name: Remove the test database from the available databases
+      mysql_db: db=test state=absent
+
+
+    - name: Copy restoring DB over to client host
+      copy: src=./{{ restore_db }} dest=/tmp/{{ restore_db }} mode=0777
+
+
+    - name: Restore the SQL DB on target host
+      mysql_db: name={{ db_name }} state=import target=/tmp/{{ restore_db }} login_user=root
+
+
+    - name: Provide user joseph access to the db_name from client
+      mysql_user: name=joseph password='123456' priv="{{ db_name }}.*:ALL" host={{ client }} state=present
+      notify:
+        - Restart mariadb
+
+
+
+  handlers:
+
+    - name: Restart mariadb
+      service: name=mariadb state=restarted enabled=yes  
+   
+    - name: Restart firewalld
+      service: name=firewalld state=restarted enabled=yes  
